@@ -1,0 +1,48 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Exam Proctoring - Tab Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 60px 20px;
+            background: #eef5ff;
+        }
+
+        .panel {
+            max-width: 520px;
+            margin: auto;
+            padding: 30px;
+            background: white;
+            border-radius: 14px;
+            box-shadow: 0 4px 16px #0001;
+        }
+
+        #status {
+            font-size: 20px;
+            font-weight: bold;
+            color: #16803d;
+        }
+
+        #log {
+            margin-top: 24px;
+            text-align: left;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="panel">
+        <h1>AI Exam Proctoring</h1>
+        <p>Tab-switch detection test</p>
+        <p id="status">Exam page is visible</p>
+        <div id="log">Waiting for activity...</div>
+    </div>
+
+    <script src="tab_monitor.js"></script>
+</body>
+</html>

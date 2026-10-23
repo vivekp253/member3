@@ -1,0 +1,311 @@
+{
+  "session": {
+    "exam_id": "faf0ab09-514e-4f8c-8c95-f6200ba30e69",
+    "candidate_id": "integration-test-002",
+    "started_at": "2026-10-12T01:43:52.824690+00:00",
+    "ended_at": null,
+    "status": "in_progress",
+    "total_warnings": 0,
+    "proctoring_summary": {}
+  },
+  "events": [
+    {
+      "id": 16,
+      "event_type": "face_absent",
+      "severity": "warning",
+      "duration_ms": 15000,
+      "details": {
+        "source": "webcam_monitor",
+        "message": "No face detected for 15 seconds"
+      },
+      "occurred_at": "2026-10-12T01:51:10.292478+00:00"
+    },
+    {
+      "id": 17,
+      "event_type": "phone_detected",
+      "severity": "warning",
+      "duration_ms": null,
+      "details": {
+        "source": "yolo11n",
+        "message": "YOLO detected a possible mobile phone",
+        "confidence": 0.655,
+        "phone_count": 1
+      },
+      "occurred_at": "2026-10-12T01:55:54.637073+00:00"
+    },
+    {
+      "id": 18,
+      "event_type": "phone_detected",
+      "severity": "warning",
+      "duration_ms": null,
+      "details": {
+        "source": "yolo11n",
+        "message": "YOLO detected a possible mobile phone",
+        "confidence": 0.529,
+        "phone_count": 1
+      },
+      "occurred_at": "2026-10-12T01:55:58.133806+00:00"
+    },
+    {
+      "id": 19,
+      "event_type": "face_absent",
+      "severity": "warning",
+      "duration_ms": 15000,
+      "details": {
+        "source": "webcam_monitor",
+        "message": "No face detected for 15 seconds"
+      },
+      "occurred_at": "2026-10-12T01:58:27.455813+00:00"
+    },
+    {
+      "id": 22,
+      "event_type": "gaze_away",
+      "severity": "warning",
+      "duration_ms": null,
+      "details": {
+        "gaze_direction": "LEFT",
+        "duration_seconds": 3.01
+      },
+      "occurred_at": "2026-10-12T04:49:02.523943+00:00"
+    },
+    {
+      "id": 23,
+      "event_type": "gaze_away",
+      "severity": "warning",
+      "duration_ms": null,
+      "details": {
+        "gaze_direction": "LEFT",
+        "duration_seconds": 3.02
+      },
+      "occurred_at": "2026-10-12T04:49:07.209401+00:00"
+    },
+    {
+      "id": 24,
+      "event_type": "multiple_faces",
+      "severity": "warning",
+      "duration_ms": null,
+      "details": {
+        "source": "webcam_monitor",
+        "message": "Multiple faces detected",
+        "face_count": 2
+      },
+      "occurred_at": "2026-10-12T04:56:04.444312+00:00"
+    },
+    {
+      "id": 25,
+      "event_type": "multiple_faces",
+      "severity": "warning",
+      "duration_ms": null,
+      "details": {
+        "source": "webcam_monitor",
+        "message": "Multiple faces detected",
+        "face_count": 2
+      },
+      "occurred_at": "2026-10-12T04:56:07.630999+00:00"
+    },
+    {
+      "id": 26,
+      "event_type": "multiple_faces",
+      "severity": "warning",
+      "duration_ms": null,
+      "details": {
+        "source": "webcam_monitor",
+        "message": "Multiple faces detected",
+        "face_count": 2
+      },
+      "occurred_at": "2026-10-12T04:56:10.508564+00:00"
+    },
+    {
+      "id": 27,
+      "event_type": "multiple_faces",
+      "severity": "warning",
+      "duration_ms": null,
+      "details": {
+        "source": "webcam_monitor",
+        "message": "Multiple faces detected",
+        "face_count": 2
+      },
+      "occurred_at": "2026-10-12T04:56:18.515227+00:00"
+    },
+    {
+      "id": 28,
+      "event_type": "multiple_faces",
+      "severity": "warning",
+      "duration_ms": null,
+      "details": {
+        "source": "webcam_monitor",
+        "message": "Multiple faces detected",
+        "face_count": 2
+      },
+      "occurred_at": "2026-10-12T04:56:23.948159+00:00"
+    },
+    {
+      "id": 29,
+      "event_type": "face_absent",
+      "severity": "warning",
+      "duration_ms": 15000,
+      "details": {
+        "source": "webcam_monitor",
+        "message": "No face detected for 15 seconds"
+      },
+      "occurred_at": "2026-10-12T04:56:42.349449+00:00"
+    },
+    {
+      "id": 30,
+      "event_type": "multiple_faces",
+      "severity": "warning",
+      "duration_ms": null,
+      "details": {
+        "source": "webcam_monitor",
+        "message": "Multiple faces detected",
+        "face_count": 2
+      },
+      "occurred_at": "2026-10-12T04:56:56.348727+00:00"
+    },
+    {
+      "id": 31,
+      "event_type": "multiple_faces",
+      "severity": "warning",
+      "duration_ms": null,
+      "details": {
+        "source": "webcam_monitor",
+        "message": "Multiple faces detected",
+        "face_count": 2
+      },
+      "occurred_at": "2026-10-12T04:56:59.789522+00:00"
+    },
+    {
+      "id": 32,
+      "event_type": "multiple_faces",
+      "severity": "warning",
+      "duration_ms": null,
+      "details": {
+        "source": "webcam_monitor",
+        "message": "Multiple faces detected",
+        "face_count": 2
+      },
+      "occurred_at": "2026-10-12T04:57:03.712393+00:00"
+    },
+    {
+      "id": 33,
+      "event_type": "phone_detected",
+      "severity": "warning",
+      "duration_ms": null,
+      "details": {
+        "source": "integrated_monitor",
+        "confidence": 0.464,
+        "phone_count": 1
+      },
+      "occurred_at": "2026-10-12T05:12:16.829106+00:00"
+    },
+    {
+      "id": 34,
+      "event_type": "phone_detected",
+      "severity": "warning",
+      "duration_ms": null,
+      "details": {
+        "source": "integrated_monitor",
+        "confidence": 0.645,
+        "phone_count": 1
+      },
+      "occurred_at": "2026-10-12T05:31:32.028542+00:00"
+    },
+    {
+      "id": 35,
+      "event_type": "phone_detected",
+      "severity": "warning",
+      "duration_ms": null,
+      "details": {
+        "source": "integrated_monitor",
+        "confidence": 0.403,
+        "phone_count": 1
+      },
+      "occurred_at": "2026-10-12T05:31:34.992214+00:00"
+    },
+    {
+      "id": 36,
+      "event_type": "gaze_away",
+      "severity": "warning",
+      "duration_ms": 3035,
+      "details": {
+        "source": "integrated_monitor",
+        "gaze_direction": "UP-RIGHT",
+        "duration_seconds": 3.04
+      },
+      "occurred_at": "2026-10-12T05:31:37.714906+00:00"
+    },
+    {
+      "id": 37,
+      "event_type": "phone_detected",
+      "severity": "warning",
+      "duration_ms": null,
+      "details": {
+        "source": "integrated_monitor",
+        "confidence": 0.501,
+        "phone_count": 1
+      },
+      "occurred_at": "2026-10-12T05:31:50.999638+00:00"
+    },
+    {
+      "id": 38,
+      "event_type": "phone_detected",
+      "severity": "warning",
+      "duration_ms": null,
+      "details": {
+        "source": "integrated_monitor",
+        "confidence": 0.38,
+        "phone_count": 1
+      },
+      "occurred_at": "2026-10-12T05:32:06.909809+00:00"
+    },
+    {
+      "id": 39,
+      "event_type": "multiple_faces",
+      "severity": "warning",
+      "duration_ms": null,
+      "details": {
+        "source": "integrated_monitor",
+        "message": "Multiple faces detected",
+        "face_count": 2
+      },
+      "occurred_at": "2026-10-12T05:32:11.949849+00:00"
+    },
+    {
+      "id": 40,
+      "event_type": "gaze_away",
+      "severity": "warning",
+      "duration_ms": 3028,
+      "details": {
+        "source": "integrated_monitor",
+        "gaze_direction": "RIGHT",
+        "duration_seconds": 3.03
+      },
+      "occurred_at": "2026-10-12T05:32:22.527553+00:00"
+    },
+    {
+      "id": 41,
+      "event_type": "multiple_faces",
+      "severity": "warning",
+      "duration_ms": null,
+      "details": {
+        "source": "integrated_monitor",
+        "message": "Multiple faces detected",
+        "face_count": 2
+      },
+      "occurred_at": "2026-10-12T05:32:31.149234+00:00"
+    },
+    {
+      "id": 42,
+      "event_type": "gaze_away",
+      "severity": "warning",
+      "duration_ms": 3195,
+      "details": {
+        "source": "integrated_monitor",
+        "gaze_direction": "RIGHT",
+        "duration_seconds": 3.2
+      },
+      "occurred_at": "2026-10-12T05:32:34.028860+00:00"
+    }
+  ],
+  "event_count": 25
+}

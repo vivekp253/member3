@@ -1,0 +1,218 @@
+
+from event_logger import save_proctoring_event
+import cv2
+import mediapipe as mp
+import time
+from pathlib import Path
+import argparse
+from uuid import UUID
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Get the exam ID when starting this script.
+parser = argparse.ArgumentParser(
+    description="Standalone face detection monitor"
+)
+parser.add_argument(
+    "--exam-id",
+    required=True,
+    help="Active exam session UUID",
+)
+args = parser.parse_args()
+
+try:
+    EXAM_ID = str(UUID(args.exam_id))
+except ValueError:
+    parser.error("--exam-id must be a valid UUID")
+
+# Configuration
+MODEL_PATH = (
+    Path(__file__).parent
+    / "models"
+    / "blaze_face_short_range.tflite"
+)
+
+NO_FACE_LIMIT = 15  # seconds
+
+if not MODEL_PATH.exists():
+    raise FileNotFoundError(
+        f"Face detection model not found: {MODEL_PATH}"
+    )
+
+# MediaPipe configuration
+BaseOptions = mp.tasks.BaseOptions
+FaceDetector = mp.tasks.vision.FaceDetector
+FaceDetectorOptions = mp.tasks.vision.FaceDetectorOptions
+RunningMode = mp.tasks.vision.RunningMode
+
+options = FaceDetectorOptions(
+    base_options=BaseOptions(
+        model_asset_path=str(MODEL_PATH)
+    ),
+    running_mode=RunningMode.IMAGE,
+    min_detection_confidence=0.6,
+)
+
+# Open webcam
+camera = cv2.VideoCapture(0)
+
+if not camera.isOpened():
+    print("Could not open webcam.")
+    raise SystemExit(1)
+
+no_face_since = None
+absence_warning_shown = False
+multiple_faces_warning_shown = False
+
+print(f"Face detection started for exam: {EXAM_ID}")
+print("Press Q to quit.")
+
+try:
+    with FaceDetector.create_from_options(options) as detector:
+        while True:
+            success, frame = camera.read()
+
+            if not success:
+                print("Could not read webcam frame.")
+                break
+
+            frame = cv2.flip(frame, 1)
+            rgb_frame = cv2.cvtColor(
+                frame, cv2.COLOR_BGR2RGB
+            )
+
+            mp_image = mp.Image(
+                image_format=mp.ImageFormat.SRGB,
+                data=rgb_frame,
+            )
+
+            result = detector.detect(mp_image)
+            face_count = len(result.detections)
+
+            # Log multiple faces once per detection episode.
+            if face_count > 1:
+                if not multiple_faces_warning_shown:
+                    print("PROCTORING EVENT: Multiple faces detected.")
+
+                    try:
+                        saved_event = save_proctoring_event(
+                            exam_id=EXAM_ID,
+                            event_type="multiple_faces",
+                            severity="warning",
+                            details={
+                                "message": "Multiple faces detected",
+                                "face_count": face_count,
+                                "source": "webcam_monitor",
+                            },
+                        )
+                        print("Saved event:", saved_event)
+                    except Exception as e:
+                        print("Could not save event:", e)
+
+                    multiple_faces_warning_shown = True
+            else:
+                multiple_faces_warning_shown = False
+
+            # Track how long no face is visible.
+            if face_count == 0:
+                if no_face_since is None:
+                    no_face_since = time.monotonic()
+                    absence_warning_shown = False
+
+                absent_seconds = time.monotonic() - no_face_since
+
+                if absent_seconds >= NO_FACE_LIMIT:
+                    label = "WARNING: Face absent for 15 seconds!"
+                    color = (0, 0, 255)
+
+                    # Log once until a face returns.
+                    if not absence_warning_shown:
+                        print(
+                            "PROCTORING EVENT: "
+                            "Face absent for 15 seconds."
+                        )
+
+                        try:
+                            saved_event = save_proctoring_event(
+                                exam_id=EXAM_ID,
+                                event_type="face_absent",
+                                severity="warning",
+                                duration_ms=15000,
+                                details={
+                                    "message": (
+                                        "No face detected "
+                                        "for 15 seconds"
+                                    ),
+                                    "source": "webcam_monitor",
+                                },
+                            )
+                            print("Saved event:", saved_event)
+                        except Exception as e:
+                            print("Could not save event:", e)
+
+                        absence_warning_shown = True
+                else:
+                    label = (
+                        f"No face: {absent_seconds:.1f}s "
+                        f"/ {NO_FACE_LIMIT}s"
+                    )
+                    color = (0, 165, 255)
+
+            else:
+                no_face_since = None
+                absence_warning_shown = False
+
+                label = f"Face detected: {face_count}"
+                color = (0, 255, 0)
+
+                if face_count > 1:
+                    label = f"WARNING: {face_count} faces detected!"
+                    color = (0, 0, 255)
+
+            # Show status on the preview.
+            cv2.putText(
+                frame,
+                label,
+                (20, 40),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.65,
+                color,
+                2,
+            )
+
+            # Draw face bounding boxes.
+            height, width = frame.shape[:2]
+
+            for detection in result.detections:
+                bbox = detection.bounding_box
+
+                x1 = max(0, bbox.origin_x)
+                y1 = max(0, bbox.origin_y)
+                x2 = min(width, bbox.origin_x + bbox.width)
+                y2 = min(height, bbox.origin_y + bbox.height)
+
+                # Adjust boxes for the mirrored preview.
+                left = width - x2
+                right = width - x1
+
+                cv2.rectangle(
+                    frame,
+                    (left, y1),
+                    (right, y2),
+                    (0, 255, 0),
+                    2,
+                )
+
+            cv2.imshow(
+                "AI Exam Proctoring - Face Detection",
+                frame,
+            )
+
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
+
+finally:
+    camera.release()
+    cv2.destroyAllWindows()
+    print("Webcam closed.")

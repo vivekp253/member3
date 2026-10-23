@@ -1,0 +1,180 @@
+
+
+from event_logger import save_proctoring_event
+import cv2
+from ultralytics import YOLO
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+
+# -----------------------------------------
+# Configuration
+# -----------------------------------------
+
+# Replace with an existing exam_id UUID from Supabase
+EXAM_ID = os.getenv("EXAM_ID")
+
+if not EXAM_ID:
+    raise RuntimeError("EXAM_ID is missing from .env")
+
+MODEL_NAME = "yolo11n.pt"
+PHONE_CLASS_ID = 67
+CONFIDENCE_THRESHOLD = 0.25
+
+# -----------------------------------------
+# Load YOLO model
+# -----------------------------------------
+
+print("Loading YOLO model...")
+model = YOLO(MODEL_NAME)
+
+print("YOLO model loaded.")
+print("Starting phone detection. Press Q to quit.")
+
+# -----------------------------------------
+# Initialize webcam
+# -----------------------------------------
+
+camera = cv2.VideoCapture(0)
+
+if not camera.isOpened():
+    print("Could not open webcam.")
+    raise SystemExit(1)
+
+phone_warning_shown = False
+
+try:
+    while True:
+        success, frame = camera.read()
+
+        if not success:
+            print("Could not read webcam frame.")
+            break
+
+        # Mirror the webcam preview
+        frame = cv2.flip(frame, 1)
+
+        # Run YOLO object detection
+        results = model.predict(
+            source=frame,
+            conf=CONFIDENCE_THRESHOLD,
+            classes=[PHONE_CLASS_ID],
+            verbose=False,
+        )
+
+        phone_count = 0
+        highest_confidence = 0.0
+
+        for result in results:
+            for box in result.boxes:
+                phone_count += 1
+
+                x1, y1, x2, y2 = map(
+                    int, box.xyxy[0].tolist()
+                )
+
+                confidence = float(box.conf[0])
+                highest_confidence = max(
+                    highest_confidence, confidence
+                )
+
+                # Draw phone bounding box
+                cv2.rectangle(
+                    frame,
+                    (x1, y1),
+                    (x2, y2),
+                    (0, 0, 255),
+                    2,
+                )
+
+                label = f"Phone: {confidence:.2f}"
+
+                cv2.putText(
+                    frame,
+                    label,
+                    (x1, max(y1 - 10, 25)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.65,
+                    (0, 0, 255),
+                    2,
+                )
+
+        # -----------------------------------------
+        # Save one event per continuous detection
+        # episode, not once per video frame
+        # -----------------------------------------
+
+        if phone_count > 0:
+            status = (
+                f"WARNING: {phone_count} phone detection(s)"
+            )
+            color = (0, 0, 255)
+
+            if not phone_warning_shown:
+                print(
+                    "PROCTORING EVENT: Phone detected."
+                )
+
+                try:
+                    saved_event = save_proctoring_event(
+                        exam_id=EXAM_ID,
+                        event_type="phone_detected",
+                        severity="warning",
+                        details={
+                            "message": (
+                                "YOLO detected a possible "
+                                "mobile phone"
+                            ),
+                            "phone_count": phone_count,
+                            "confidence": round(
+                                highest_confidence, 3
+                            ),
+                            "source": "yolo11n",
+                        },
+                    )
+
+                    print(
+                        "Saved to Supabase:",
+                        saved_event,
+                    )
+
+                except Exception as e:
+                    print(
+                        "Could not save event to Supabase:",
+                        e,
+                    )
+
+                phone_warning_shown = True
+
+        else:
+            status = "No phone detected"
+            color = (0, 255, 0)
+
+            # Allow a new event if the phone disappears
+            phone_warning_shown = False
+
+        # Display detection status
+        cv2.putText(
+            frame,
+            status,
+            (20, 35),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            color,
+            2,
+        )
+
+        cv2.imshow(
+            "AI Exam Proctoring - Phone Detection",
+            frame,
+        )
+
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            break
+
+finally:
+    camera.release()
+    cv2.destroyAllWindows()
+    print("Phone detection closed.")

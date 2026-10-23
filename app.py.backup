@@ -1,0 +1,895 @@
+from flask import Flask, request, jsonify, send_file, render_template
+from flask_cors import CORS
+from io import BytesIO
+import os
+import json
+import psycopg
+from psycopg.types.json import Jsonb
+from dotenv import load_dotenv
+
+from reportlab.lib import colors
+from reportlab.lib.colors import HexColor
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.units import cm
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+)
+from reportlab.graphics.shapes import Drawing, Rect, String
+
+
+load_dotenv()
+
+app = Flask(__name__)
+CORS(app)
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+MAX_ALLOWED_SWITCHES = 2
+
+
+# =========================================
+# 1. DATABASE CONNECTION
+# =========================================
+
+def get_db_connection():
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL is missing from .env")
+
+    return psycopg.connect(
+        DATABASE_URL,
+        connect_timeout=10,
+    )
+
+
+# =========================================
+# 2. HOME ROUTE
+# =========================================
+
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({
+        "status": "running",
+        "message": "AI Exam Proctoring backend is ready",
+    }), 200
+
+
+# =========================================
+# 3. START EXAM
+# =========================================
+
+@app.route("/start-exam", methods=["POST"])
+def start_exam():
+    data = request.get_json(silent=True) or {}
+    candidate_id = data.get("candidate_id")
+
+    if not isinstance(candidate_id, str) or not candidate_id.strip():
+        return jsonify({
+            "error": "candidate_id is required"
+        }), 400
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO public.exam_sessions (candidate_id)
+                    VALUES (%s)
+                    RETURNING exam_id, status, started_at
+                """, (candidate_id.strip(),))
+
+                exam_id, status, started_at = cur.fetchone()
+
+        return jsonify({
+            "exam_id": str(exam_id),
+            "status": status,
+            "started_at": started_at.isoformat(),
+        }), 201
+
+    except Exception:
+        app.logger.exception("Failed to create exam session")
+        return jsonify({
+            "error": "Could not create exam session"
+        }), 500
+
+
+# =========================================
+# 4. BROWSER TAB-SWITCH MONITORING
+# =========================================
+
+@app.route("/tab-switch", methods=["POST"])
+def tab_switch():
+    data = request.get_json(silent=True) or {}
+
+    exam_id = data.get("exam_id")
+    duration_ms = data.get("duration_ms", 0)
+
+    if not exam_id:
+        return jsonify({
+            "error": "exam_id is required"
+        }), 400
+
+    if (
+        not isinstance(duration_ms, int)
+        or isinstance(duration_ms, bool)
+        or duration_ms < 0
+    ):
+        return jsonify({
+            "error": "Invalid duration_ms"
+        }), 400
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT status
+                    FROM public.exam_sessions
+                    WHERE exam_id = %s
+                    FOR UPDATE
+                """, (exam_id,))
+
+                session = cur.fetchone()
+
+                if session is None:
+                    return jsonify({
+                        "error": "Exam session not found"
+                    }), 404
+
+                if session[0] != "in_progress":
+                    return jsonify({
+                        "status": "already_terminated",
+                        "exam_status": session[0],
+                    }), 200
+
+                cur.execute("""
+                    SELECT COUNT(*)
+                    FROM public.proctoring_events
+                    WHERE exam_id = %s
+                      AND event_type = 'tab_switch'
+                """, (exam_id,))
+
+                switch_count = cur.fetchone()[0] + 1
+                terminated = switch_count >= MAX_ALLOWED_SWITCHES
+
+                cur.execute("""
+                    INSERT INTO public.proctoring_events
+                        (
+                            exam_id,
+                            event_type,
+                            severity,
+                            duration_ms,
+                            details
+                        )
+                    VALUES (%s, 'tab_switch', 'warning', %s, %s)
+                    RETURNING id, occurred_at
+                """, (
+                    exam_id,
+                    duration_ms,
+                    Jsonb({
+                        "switch_count": switch_count,
+                        "source": "browser_visibility_api",
+                    }),
+                ))
+
+                event_id, occurred_at = cur.fetchone()
+
+                # Keep the session counter for compatibility.
+                # The report calculates its warning count from events.
+                cur.execute("""
+                    UPDATE public.exam_sessions
+                    SET
+                        total_warnings =
+                            COALESCE(total_warnings, 0) + 1,
+                        status = CASE
+                            WHEN %s THEN 'terminated'
+                            ELSE status
+                        END,
+                        ended_at = CASE
+                            WHEN %s THEN NOW()
+                            ELSE ended_at
+                        END
+                    WHERE exam_id = %s
+                """, (
+                    terminated,
+                    terminated,
+                    exam_id,
+                ))
+
+        return jsonify({
+            "status": "terminated" if terminated else "logged",
+            "switch_count": switch_count,
+            "limit": MAX_ALLOWED_SWITCHES,
+            "exam_terminated": terminated,
+            "event_id": event_id,
+            "occurred_at": occurred_at.isoformat(),
+        }), 201
+
+    except Exception:
+        app.logger.exception("Failed to process tab switch")
+        return jsonify({
+            "error": "Could not process tab-switch event"
+        }), 500
+
+
+# =========================================
+# 5. TERMINATE EXAM
+# =========================================
+
+@app.route("/terminate-exam", methods=["POST"])
+def terminate_exam():
+    data = request.get_json(silent=True) or {}
+
+    exam_id = data.get("exam_id")
+    reason = data.get("reason", "termination_requested")
+
+    if not exam_id:
+        return jsonify({
+            "error": "exam_id is required"
+        }), 400
+
+    if not isinstance(reason, str) or not reason.strip():
+        return jsonify({
+            "error": "Invalid termination reason"
+        }), 400
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT status
+                    FROM public.exam_sessions
+                    WHERE exam_id = %s
+                    FOR UPDATE
+                """, (exam_id,))
+
+                session = cur.fetchone()
+
+                if session is None:
+                    return jsonify({
+                        "error": "Exam session not found"
+                    }), 404
+
+                if session[0] != "in_progress":
+                    return jsonify({
+                        "status": session[0],
+                        "exam_terminated": session[0] == "terminated",
+                        "message": "Exam session is already closed",
+                    }), 200
+
+                cur.execute("""
+                    INSERT INTO public.proctoring_events
+                        (exam_id, event_type, severity, details)
+                    VALUES (%s, 'exam_terminated', 'critical', %s)
+                    RETURNING id, occurred_at
+                """, (
+                    exam_id,
+                    Jsonb({
+                        "reason": reason.strip(),
+                        "source": "flask_backend",
+                    }),
+                ))
+
+                event_id, occurred_at = cur.fetchone()
+
+                # Termination changes the status. The critical event
+                # is not counted as a warning-level event in the report.
+                cur.execute("""
+                    UPDATE public.exam_sessions
+                    SET
+                        status = 'terminated',
+                        ended_at = NOW()
+                    WHERE exam_id = %s
+                      AND status = 'in_progress'
+                    RETURNING exam_id, status, ended_at
+                """, (exam_id,))
+
+                updated_session = cur.fetchone()
+
+        if updated_session is None:
+            return jsonify({
+                "error": "Could not terminate exam"
+            }), 409
+
+        return jsonify({
+            "exam_id": str(updated_session[0]),
+            "status": updated_session[1],
+            "ended_at": updated_session[2].isoformat(),
+            "reason": reason.strip(),
+            "event_id": event_id,
+            "occurred_at": occurred_at.isoformat(),
+        }), 200
+
+    except Exception:
+        app.logger.exception("Failed to terminate exam")
+        return jsonify({
+            "error": "Could not terminate exam"
+        }), 500
+
+
+# =========================================
+# 6. FETCH EXAM REPORT DATA
+# =========================================
+
+def fetch_exam_report(exam_id):
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    exam_id::text,
+                    candidate_id,
+                    started_at,
+                    ended_at,
+                    status,
+                    total_warnings,
+                    proctoring_summary
+                FROM public.exam_sessions
+                WHERE exam_id = %s
+            """, (exam_id,))
+
+            row = cur.fetchone()
+
+            if row is None:
+                return None
+
+            session = {
+                "exam_id": row[0],
+                "candidate_id": row[1],
+                "started_at": row[2].isoformat() if row[2] else None,
+                "ended_at": row[3].isoformat() if row[3] else None,
+                "status": row[4],
+                "session_warning_counter": row[5] or 0,
+                "proctoring_summary": row[6],
+            }
+
+            cur.execute("""
+                SELECT
+                    id,
+                    event_type,
+                    severity,
+                    duration_ms,
+                    details,
+                    occurred_at
+                FROM public.proctoring_events
+                WHERE exam_id = %s
+                ORDER BY occurred_at ASC, id ASC
+            """, (exam_id,))
+
+            event_rows = cur.fetchall()
+
+    events = []
+
+    for event in event_rows:
+        events.append({
+            "id": event[0],
+            "event_type": event[1],
+            "severity": event[2],
+            "duration_ms": event[3],
+            "details": event[4] or {},
+            "occurred_at": (
+                event[5].isoformat() if event[5] else None
+            ),
+        })
+
+    event_counts = {}
+
+    for event in events:
+        event_type = event["event_type"]
+        event_counts[event_type] = (
+            event_counts.get(event_type, 0) + 1
+        )
+
+    # Counts derived from actual database events.
+    warning_count = sum(
+        1 for event in events
+        if event["severity"] == "warning"
+    )
+
+    critical_count = sum(
+        1 for event in events
+        if event["severity"] == "critical"
+    )
+
+    flagged_count = warning_count + critical_count
+
+    session["event_count"] = len(events)
+    session["event_counts"] = event_counts
+
+    # Clear, event-derived metrics used by the PDF and dashboard.
+    session["total_warnings"] = warning_count
+    session["recorded_warning_events"] = warning_count
+    session["recorded_critical_events"] = critical_count
+    session["recorded_flagged_events"] = flagged_count
+    session["events"] = events
+
+    return session
+
+
+# =========================================
+# 7. JSON EXAM REPORT API
+# =========================================
+
+@app.route("/exam-report/<exam_id>", methods=["GET"])
+def exam_report(exam_id):
+    try:
+        report = fetch_exam_report(exam_id)
+
+        if report is None:
+            return jsonify({
+                "error": "Exam session not found"
+            }), 404
+
+        return jsonify(report), 200
+
+    except Exception:
+        app.logger.exception("Failed to generate exam report")
+        return jsonify({
+            "error": "Could not generate exam report"
+        }), 500
+
+
+# =========================================
+# 8. PDF REPORT - VISUAL INFOGRAPHIC
+# =========================================
+
+@app.route("/exam-report/<exam_id>/pdf", methods=["GET"])
+def exam_report_pdf(exam_id):
+    try:
+        report = fetch_exam_report(exam_id)
+
+        if report is None:
+            return jsonify({
+                "error": "Exam session not found"
+            }), 404
+
+        pdf_buffer = BytesIO()
+
+        document = SimpleDocTemplate(
+            pdf_buffer,
+            pagesize=A4,
+            rightMargin=1.5 * cm,
+            leftMargin=1.5 * cm,
+            topMargin=1.5 * cm,
+            bottomMargin=1.5 * cm,
+        )
+
+        styles = getSampleStyleSheet()
+
+        styles.add(ParagraphStyle(
+            name="ReportTitle",
+            parent=styles["Title"],
+            alignment=TA_CENTER,
+            fontSize=20,
+            leading=25,
+            textColor=HexColor("#253858"),
+            spaceAfter=8,
+        ))
+
+        styles.add(ParagraphStyle(
+            name="SmallCell",
+            parent=styles["BodyText"],
+            fontSize=7.5,
+            leading=9,
+            wordWrap="CJK",
+        ))
+
+        story = []
+
+        # REPORT HEADER
+        story.append(Paragraph(
+            "AI EXAM PROCTORING REPORT",
+            styles["ReportTitle"],
+        ))
+
+        story.append(Paragraph(
+            "Exam session analysis and recorded events",
+            styles["Normal"],
+        ))
+
+        story.append(Spacer(1, 18))
+
+        # SESSION SUMMARY
+        session_rows = [
+            ["FIELD", "DETAILS"],
+            ["Candidate ID", str(report["candidate_id"])],
+            ["Exam ID", str(report["exam_id"])],
+            ["Exam Status", str(report["status"]).upper()],
+            ["Started At", str(report["started_at"] or "N/A")],
+            ["Ended At", str(report["ended_at"] or "Not ended")],
+            [
+                "Recorded Warning-Level Events",
+                str(report["recorded_warning_events"]),
+            ],
+            [
+                "Recorded Critical Events",
+                str(report["recorded_critical_events"]),
+            ],
+            ["Total Recorded Events", str(report["event_count"])],
+        ]
+
+        session_table = Table(
+            session_rows,
+            colWidths=[6 * cm, 10.5 * cm],
+            repeatRows=1,
+        )
+
+        session_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), HexColor("#253858")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("GRID", (0, 0), (-1, -1), 0.4, HexColor("#D7DEE8")),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [
+                colors.white,
+                HexColor("#F2F5F9"),
+            ]),
+            ("LEFTPADDING", (0, 0), (-1, -1), 7),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+            ("TOPPADDING", (0, 0), (-1, -1), 7),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ]))
+
+        story.append(session_table)
+        story.append(Spacer(1, 22))
+
+        # VISUAL EVENT ANALYSIS
+        story.append(Paragraph(
+            "PROCTORING EVENT ANALYSIS",
+            styles["Heading2"],
+        ))
+
+        story.append(Paragraph(
+            "Each colored bar represents an event category's share "
+            "of all recorded events in this exam session.",
+            styles["Normal"],
+        ))
+
+        story.append(Spacer(1, 12))
+
+        event_counts = report.get("event_counts", {})
+        total_events = report["event_count"]
+
+        event_colors = {
+            "phone_detected": "#A63EC5",
+            "eyes_closed": "#FF3E79",
+            "multiple_faces": "#00A7D6",
+            "gaze_away": "#00B8A9",
+            "face_absent": "#E9A23B",
+            "tab_switch": "#3867D6",
+            "exam_terminated": "#D64545",
+        }
+
+        sorted_events = sorted(
+            event_counts.items(),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+
+        chart_width = 460
+        chart_height = max(55, len(sorted_events) * 42 + 10)
+        drawing = Drawing(chart_width, chart_height)
+
+        if total_events == 0:
+            drawing.add(String(
+                0,
+                chart_height - 25,
+                "No proctoring events have been recorded.",
+                fontName="Helvetica",
+                fontSize=10,
+                fillColor=HexColor("#667085"),
+            ))
+        else:
+            for index, (event_name, count) in enumerate(sorted_events):
+                y = chart_height - (index + 1) * 42 + 5
+                percentage = count / total_events * 100
+
+                color = HexColor(
+                    event_colors.get(event_name, "#667085")
+                )
+
+                readable_name = event_name.replace("_", " ").title()
+
+                drawing.add(String(
+                    0,
+                    y + 22,
+                    readable_name,
+                    fontName="Helvetica-Bold",
+                    fontSize=8.5,
+                    fillColor=HexColor("#344054"),
+                ))
+
+                track_width = 320
+                track_height = 11
+
+                drawing.add(Rect(
+                    0,
+                    y + 3,
+                    track_width,
+                    track_height,
+                    fillColor=HexColor("#E9EDF2"),
+                    strokeColor=None,
+                    rx=3,
+                    ry=3,
+                ))
+
+                bar_width = track_width * count / total_events
+
+                if bar_width > 0:
+                    drawing.add(Rect(
+                        0,
+                        y + 3,
+                        bar_width,
+                        track_height,
+                        fillColor=color,
+                        strokeColor=None,
+                        rx=3,
+                        ry=3,
+                    ))
+
+                drawing.add(String(
+                    335,
+                    y + 5,
+                    f"{count} events | {percentage:.1f}%",
+                    fontName="Helvetica-Bold",
+                    fontSize=8,
+                    fillColor=HexColor("#344054"),
+                ))
+
+        story.append(drawing)
+        story.append(Spacer(1, 12))
+
+        story.append(Paragraph(
+            "Note: Percentages represent recorded event counts. "
+            "Repeated detections may relate to the same incident "
+            "and do not independently establish misconduct.",
+            styles["Italic"],
+        ))
+
+        story.append(Spacer(1, 20))
+
+        # EVENT SUMMARY TABLE
+        story.append(Paragraph(
+            "EVENT SUMMARY",
+            styles["Heading2"],
+        ))
+
+        summary_rows = [["EVENT CATEGORY", "COUNT", "SHARE"]]
+
+        if total_events > 0:
+            for event_name, count in sorted_events:
+                summary_rows.append([
+                    event_name.replace("_", " ").title(),
+                    str(count),
+                    f"{count / total_events * 100:.1f}%",
+                ])
+        else:
+            summary_rows.append([
+                "No events recorded",
+                "0",
+                "0.0%",
+            ])
+
+        summary_table = Table(
+            summary_rows,
+            colWidths=[8 * cm, 3.5 * cm, 5 * cm],
+            repeatRows=1,
+        )
+
+        summary_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), HexColor("#253858")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("GRID", (0, 0), (-1, -1), 0.4, HexColor("#D7DEE8")),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [
+                colors.white,
+                HexColor("#F2F5F9"),
+            ]),
+            ("LEFTPADDING", (0, 0), (-1, -1), 7),
+            ("TOPPADDING", (0, 0), (-1, -1), 7),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ]))
+
+        story.append(summary_table)
+        story.append(Spacer(1, 20))
+
+        # DETAILED EVENT LOG
+        story.append(Paragraph(
+            "DETAILED EVENT LOG",
+            styles["Heading2"],
+        ))
+
+        event_rows = [[
+            "TIME",
+            "EVENT",
+            "SEVERITY",
+            "DURATION",
+            "DETAILS",
+        ]]
+
+        for event in report["events"]:
+            details = json.dumps(
+                event["details"],
+                ensure_ascii=False,
+                default=str,
+            )
+
+            details = (
+                details.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+            )
+
+            event_rows.append([
+                Paragraph(
+                    str(event["occurred_at"] or ""),
+                    styles["SmallCell"],
+                ),
+                Paragraph(
+                    event["event_type"].replace("_", " ").title(),
+                    styles["SmallCell"],
+                ),
+                Paragraph(
+                    str(event["severity"]).title(),
+                    styles["SmallCell"],
+                ),
+                Paragraph(
+                    (
+                        f'{event["duration_ms"]} ms'
+                        if event["duration_ms"] is not None
+                        else "—"
+                    ),
+                    styles["SmallCell"],
+                ),
+                Paragraph(details, styles["SmallCell"]),
+            ])
+
+        if len(event_rows) == 1:
+            event_rows.append([
+                Paragraph("No events recorded", styles["SmallCell"]),
+                "", "", "", "",
+            ])
+
+        event_table = Table(
+            event_rows,
+            colWidths=[
+                3.5 * cm,
+                3 * cm,
+                2 * cm,
+                2 * cm,
+                6 * cm,
+            ],
+            repeatRows=1,
+        )
+
+        event_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), HexColor("#253858")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 7),
+            ("GRID", (0, 0), (-1, -1), 0.4, HexColor("#D7DEE8")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ]))
+
+        story.append(event_table)
+        story.append(Spacer(1, 16))
+
+        story.append(Paragraph(
+            "This report summarizes recorded proctoring events. "
+            "Automated detections may require human review and should "
+            "not independently be treated as proof of misconduct.",
+            styles["Italic"],
+        ))
+
+        document.build(story)
+        pdf_buffer.seek(0)
+
+        return send_file(
+            pdf_buffer,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=f"exam_report_{report['exam_id']}.pdf",
+        )
+
+    except Exception:
+        app.logger.exception("Failed to generate PDF report")
+        return jsonify({
+            "error": "Could not generate PDF report"
+        }), 500
+
+
+# =========================================
+# 9. ADMIN DASHBOARD PAGE
+# =========================================
+
+@app.route("/admin", methods=["GET"])
+def admin_dashboard():
+    return render_template("admin_dashboard.html")
+
+
+# =========================================
+# 10. ADMIN DASHBOARD SESSIONS API
+# =========================================
+
+@app.route("/admin/api/sessions", methods=["GET"])
+def admin_sessions():
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT
+                        s.exam_id::text,
+                        s.candidate_id,
+                        s.started_at,
+                        s.ended_at,
+                        s.status,
+                        s.total_warnings,
+                        COUNT(e.id) AS event_count,
+                        COUNT(e.id) FILTER (
+                            WHERE e.severity = 'warning'
+                        ) AS warning_event_count,
+                        COUNT(e.id) FILTER (
+                            WHERE e.severity = 'critical'
+                        ) AS critical_event_count
+                    FROM public.exam_sessions AS s
+                    LEFT JOIN public.proctoring_events AS e
+                        ON e.exam_id = s.exam_id
+                    GROUP BY
+                        s.exam_id,
+                        s.candidate_id,
+                        s.started_at,
+                        s.ended_at,
+                        s.status,
+                        s.total_warnings
+                    ORDER BY s.started_at DESC
+                """)
+
+                rows = cur.fetchall()
+
+        sessions = []
+
+        for row in rows:
+            sessions.append({
+                "exam_id": row[0],
+                "candidate_id": row[1],
+                "started_at": row[2].isoformat() if row[2] else None,
+                "ended_at": row[3].isoformat() if row[3] else None,
+                "status": row[4],
+                "session_warning_counter": row[5] or 0,
+                "event_count": row[6] or 0,
+                "total_warnings": row[7] or 0,
+                "recorded_critical_events": row[8] or 0,
+            })
+
+        return jsonify({"sessions": sessions}), 200
+
+    except Exception:
+        app.logger.exception("Failed to load admin sessions")
+        return jsonify({
+            "error": "Could not load exam sessions"
+        }), 500
+
+
+# =========================================
+# 11. START SERVER
+# =========================================
+
+if __name__ == "__main__":
+    if not DATABASE_URL:
+        raise RuntimeError(
+            "DATABASE_URL is missing. Check your .env file."
+        )
+
+    app.run(
+        host="127.0.0.1",
+        port=5000,
+        debug=False,
+    )

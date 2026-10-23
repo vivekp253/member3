@@ -1,0 +1,524 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Exam Proctoring | Admin</title>
+<style>
+:root {
+  --blue: #0a66c2;
+  --blue-light: #e8f3ff;
+  --text: #191919;
+  --muted: #666;
+  --border: #e0e0e0;
+  --bg: #f3f2ef;
+  --white: #fff;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+header {
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.topbar {
+  max-width: 1200px;
+  margin: auto;
+  min-height: 64px;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+.brand {
+  color: var(--blue);
+  font-size: 19px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+.brand span { color: var(--text); }
+.search {
+  width: min(340px, 100%);
+  padding: 11px 14px;
+  border: 1px solid #c8d5e2;
+  border-radius: 7px;
+  background: #edf3f8;
+  outline-color: var(--blue);
+}
+.admin {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 14px;
+}
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--blue-light);
+  color: var(--blue);
+  font-weight: bold;
+}
+main {
+  max-width: 1200px;
+  margin: 24px auto;
+  padding: 0 20px;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+.panel {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.profile {
+  text-align: center;
+  padding: 22px 15px;
+  border-bottom: 1px solid var(--border);
+}
+.profile .avatar {
+  width: 58px;
+  height: 58px;
+  margin: 0 auto 10px;
+  font-size: 22px;
+}
+.profile h3 { margin: 6px 0; font-size: 17px; }
+.profile p { margin: 0; color: var(--muted); font-size: 13px; }
+nav { padding: 10px 0; }
+nav a {
+  display: block;
+  padding: 13px 18px;
+  color: #444;
+  text-decoration: none;
+  border-left: 3px solid transparent;
+  font-size: 14px;
+}
+nav a:hover, nav a.active {
+  color: var(--blue);
+  background: var(--blue-light);
+  border-left-color: var(--blue);
+}
+.side-note {
+  margin: 12px;
+  padding: 12px;
+  background: #f8fafd;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+h1 { margin: 0 0 7px; font-size: 25px; }
+.subtitle { margin: 0 0 22px; color: var(--muted); font-size: 14px; }
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 24px 0 12px;
+}
+.section-heading h2 { margin: 0; font-size: 18px; }
+.button {
+  border: 1px solid var(--blue);
+  background: var(--blue);
+  color: white;
+  border-radius: 20px;
+  padding: 9px 16px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+}
+.button.secondary {
+  color: var(--blue);
+  background: white;
+}
+.button:hover { opacity: .88; }
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.stat {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 18px 15px;
+}
+.stat .label { color: var(--muted); font-size: 13px; }
+.stat .number { font-size: 29px; font-weight: 700; margin: 12px 0 5px; }
+.stat .hint { font-size: 12px; color: var(--muted); }
+.stat.blue { border-top: 3px solid var(--blue); }
+.stat.green { border-top: 3px solid #18864b; }
+.stat.orange { border-top: 3px solid #c77700; }
+.stat.red { border-top: 3px solid #c93737; }
+.table-panel { background: white; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.table-tools {
+  padding: 15px;
+  display: flex;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.table-tools input, .table-tools select {
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  min-width: 0;
+}
+.table-tools input { flex: 1; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 14px 12px; border-bottom: 1px solid #eee; }
+th { background: #f8fafd; color: #555; font-weight: 600; white-space: nowrap; }
+tbody tr:hover { background: #f8fbff; }
+.candidate { font-weight: 600; }
+.subtext { display: block; color: var(--muted); font-size: 11px; margin-top: 4px; }
+.badge {
+  display: inline-block;
+  border-radius: 12px;
+  padding: 5px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.badge.active { color: #176b3a; background: #e5f5eb; }
+.badge.terminated { color: #a32626; background: #fdeaea; }
+.badge.completed { color: #1757a6; background: #e8f1ff; }
+.badge.other { color: #555; background: #eee; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.link-button {
+  background: none;
+  border: 0;
+  padding: 4px;
+  color: var(--blue);
+  cursor: pointer;
+  font-weight: 600;
+  text-decoration: none;
+  font-size: 12px;
+}
+.empty { text-align: center; padding: 32px 15px; color: var(--muted); }
+#message { font-size: 13px; color: var(--muted); margin: 12px 0; }
+#reportDetails { padding: 18px; line-height: 1.8; overflow-wrap: anywhere; }
+.event-list { margin-top: 14px; }
+.event-row { border-top: 1px solid #eee; padding: 12px 0; font-size: 13px; }
+.event-row small { display: block; color: var(--muted); margin-top: 5px; }
+footer { text-align: center; color: #777; font-size: 12px; padding: 22px; }
+@media (max-width: 900px) {
+  main { grid-template-columns: 180px minmax(0, 1fr); gap: 12px; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 650px) {
+  .topbar { flex-wrap: wrap; gap: 12px; }
+  .search { order: 3; width: 100%; }
+  main { grid-template-columns: 1fr; margin-top: 14px; }
+  nav { display: flex; flex-wrap: wrap; }
+  nav a { padding: 10px; }
+  .side-note { display: none; }
+  .stats { gap: 8px; }
+  .stat { padding: 13px 10px; }
+  .stat .number { font-size: 24px; }
+  .table-tools { flex-wrap: wrap; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="topbar">
+    <div class="brand">AI <span>Exam Proctoring</span></div>
+    <input class="search" id="globalSearch" placeholder="Search candidates or exam IDs..." aria-label="Search candidates or exam IDs">
+    <div class="admin">
+      <div class="avatar">A</div>
+      <div><strong>Admin</strong><div style="color:#666;font-size:12px">Exam management</div></div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <aside>
+    <div class="panel">
+      <div class="profile">
+        <div class="avatar">A</div>
+        <h3>Administrator</h3>
+        <p>Proctoring workspace</p>
+      </div>
+      <nav>
+        <a class="active" href="#overview">▦ &nbsp; Overview</a>
+        <a href="#candidates">♙ &nbsp; Candidates</a>
+        <a href="#events">⚑ &nbsp; Proctoring events</a>
+        <a href="#reports">▤ &nbsp; Reports</a>
+      </nav>
+      <div class="side-note">
+        <strong>Exam monitoring</strong><br>
+        Review recorded events and session status before making a final decision.
+      </div>
+    </div>
+  </aside>
+
+  <section>
+    <div id="overview">
+      <h1>Welcome, Admin</h1>
+      <p class="subtitle">Here's an overview of your exam sessions.</p>
+
+      <div class="stats">
+        <div class="stat blue">
+          <div class="label">Total exams</div>
+          <div class="number" id="totalExams">—</div>
+          <div class="hint">Recorded sessions</div>
+        </div>
+        <div class="stat green">
+          <div class="label">In progress</div>
+          <div class="number" id="activeExams">—</div>
+          <div class="hint">Active sessions</div>
+        </div>
+        <div class="stat red">
+          <div class="label">Terminated</div>
+          <div class="number" id="terminatedExams">—</div>
+          <div class="hint">Closed automatically or by request</div>
+        </div>
+        <div class="stat orange">
+          <div class="label">Recorded events</div>
+          <div class="number" id="totalEvents">—</div>
+          <div class="hint">Across listed sessions</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="candidates">
+      <div class="section-heading">
+        <h2>Exam sessions</h2>
+        <button class="button secondary" id="refreshButton">↻ Refresh</button>
+      </div>
+
+      <div class="table-panel">
+        <div class="table-tools">
+          <input id="candidateSearch" placeholder="Search by candidate ID or exam ID...">
+          <select id="statusFilter" aria-label="Filter by exam status">
+            <option value="">All statuses</option>
+            <option value="in_progress">In progress</option>
+            <option value="terminated">Terminated</option>
+            <option value="completed">Completed</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Candidate / Exam ID</th>
+                <th>Started</th>
+                <th>Status</th>
+                <th>Events</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="sessionsBody">
+              <tr><td colspan="5" class="empty">Loading exam sessions...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="message" role="status" aria-live="polite"></div>
+      </div>
+    </div>
+
+    <div id="events">
+      <div class="section-heading"><h2>Proctoring events</h2></div>
+      <div class="panel" id="eventsPanel">
+        <div class="empty">Choose “View report” for a session to inspect its recorded events.</div>
+      </div>
+    </div>
+
+    <div id="reports">
+      <div class="section-heading"><h2>Exam report</h2></div>
+      <div class="panel" id="reportPanel">
+        <div class="empty">Select a session to view its summary and download its PDF report.</div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>AI Exam Proctoring · Admin workspace</footer>
+
+<script>
+const sessionsBody = document.getElementById("sessionsBody");
+const message = document.getElementById("message");
+let sessions = [];
+
+function escapeHTML(value) {
+  return String(value ?? "").replace(/[&<>"']/g, ch => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[ch]);
+}
+
+function formatDate(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
+}
+
+function statusBadge(status) {
+  const normalized = String(status || "unknown").toLowerCase();
+  const cls = normalized === "in_progress" ? "active"
+    : normalized === "terminated" ? "terminated"
+    : normalized === "completed" ? "completed" : "other";
+  const label = normalized.replaceAll("_", " ");
+  return `<span class="badge ${cls}">${escapeHTML(label)}</span>`;
+}
+
+function getEventCount(session) {
+  return Number(session.event_count ?? 0);
+}
+
+function renderSessions() {
+  const query = (
+    document.getElementById("candidateSearch").value + " " +
+    document.getElementById("globalSearch").value
+  ).trim().toLowerCase();
+  const status = document.getElementById("statusFilter").value;
+
+  const filtered = sessions.filter(s => {
+    const searchable = `${s.candidate_id || ""} ${s.exam_id || ""}`.toLowerCase();
+    return searchable.includes(query) &&
+      (!status || s.status === status);
+  });
+
+  if (!filtered.length) {
+    sessionsBody.innerHTML =
+      `<tr><td colspan="5" class="empty">No matching sessions found.</td></tr>`;
+    return;
+  }
+
+  sessionsBody.innerHTML = filtered.map(s => `
+    <tr>
+      <td>
+        <span class="candidate">${escapeHTML(s.candidate_id || "Unknown candidate")}</span>
+        <span class="subtext">${escapeHTML(s.exam_id)}</span>
+      </td>
+      <td>${escapeHTML(formatDate(s.started_at))}</td>
+      <td>${statusBadge(s.status)}</td>
+      <td>${getEventCount(s)}</td>
+      <td><div class="actions">
+        <button class="link-button" data-report="${escapeHTML(s.exam_id)}">View report</button>
+        <button class="link-button" data-pdf="${escapeHTML(s.exam_id)}">PDF</button>
+      </div></td>
+    </tr>
+  `).join("");
+}
+
+async function loadSessions() {
+  sessionsBody.innerHTML =
+    `<tr><td colspan="5" class="empty">Loading exam sessions...</td></tr>`;
+  message.textContent = "Connecting to the Flask backend...";
+
+  try {
+    const response = await fetch("/admin/api/sessions");
+    if (!response.ok) {
+      throw new Error(`Sessions API returned HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    sessions = data.sessions || [];
+
+    document.getElementById("totalExams").textContent = sessions.length;
+    document.getElementById("activeExams").textContent =
+      sessions.filter(s => s.status === "in_progress").length;
+    document.getElementById("terminatedExams").textContent =
+      sessions.filter(s => s.status === "terminated").length;
+    document.getElementById("totalEvents").textContent =
+      sessions.reduce((sum, s) => sum + getEventCount(s), 0);
+
+    renderSessions();
+    message.textContent = `Loaded ${sessions.length} exam session(s).`;
+  } catch (error) {
+    sessionsBody.innerHTML =
+      `<tr><td colspan="5" class="empty">Could not load sessions. Check that Flask is running and the admin API route is installed.</td></tr>`;
+    message.textContent = error.message;
+  }
+}
+
+async function viewReport(examId) {
+  const reportPanel = document.getElementById("reportPanel");
+  const eventsPanel = document.getElementById("eventsPanel");
+  reportPanel.innerHTML = `<div class="empty">Loading report...</div>`;
+  eventsPanel.innerHTML = `<div class="empty">Loading events...</div>`;
+
+  try {
+    const response = await fetch(`/exam-report/${encodeURIComponent(examId)}`);
+    const report = await response.json();
+    if (!response.ok) throw new Error(report.error || "Could not load report");
+
+    const counts = Object.entries(report.event_counts || {});
+    reportPanel.innerHTML = `
+      <div id="reportDetails">
+        <strong>Candidate:</strong> ${escapeHTML(report.candidate_id)}<br>
+        <strong>Exam ID:</strong> ${escapeHTML(report.exam_id)}<br>
+        <strong>Status:</strong> ${statusBadge(report.status)}<br>
+        <strong>Started:</strong> ${escapeHTML(formatDate(report.started_at))}<br>
+        <strong>Ended:</strong> ${escapeHTML(formatDate(report.ended_at))}<br>
+        <strong>Recorded events:</strong> ${Number(report.event_count || 0)}<br>
+        <strong>Session warning counter:</strong> ${Number(report.total_warnings || 0)}
+        <div class="section-heading"><h2>Event counts</h2></div>
+        ${counts.length ? counts.map(([name,count]) =>
+          `<div>${escapeHTML(name.replaceAll("_"," "))}: <strong>${Number(count)}</strong></div>`
+        ).join("") : "No events recorded."}
+        <div style="margin-top:18px">
+          <a class="button" href="/exam-report/${encodeURIComponent(examId)}/pdf">Download PDF report</a>
+        </div>
+      </div>`;
+
+    const events = report.events || [];
+    eventsPanel.innerHTML = events.length ? `
+      <div style="padding:0 16px">
+        ${events.map(event => `
+          <div class="event-row">
+            <strong>${escapeHTML(event.event_type.replaceAll("_"," "))}</strong>
+            ${statusBadge(event.severity)}
+            <small>${escapeHTML(formatDate(event.occurred_at))} · ${escapeHTML(JSON.stringify(event.details || {}))}</small>
+          </div>
+        `).join("")}
+      </div>` : `<div class="empty">No events recorded.</div>`;
+
+    document.getElementById("reports").scrollIntoView({behavior:"smooth"});
+  } catch (error) {
+    reportPanel.innerHTML =
+      `<div class="empty">${escapeHTML(error.message)}</div>`;
+  }
+}
+
+sessionsBody.addEventListener("click", event => {
+  const reportButton = event.target.closest("[data-report]");
+  const pdfButton = event.target.closest("[data-pdf]");
+
+  if (reportButton) viewReport(reportButton.dataset.report);
+  if (pdfButton) {
+    window.open(
+      `/exam-report/${encodeURIComponent(pdfButton.dataset.pdf)}/pdf`,
+      "_blank",
+      "noopener"
+    );
+  }
+});
+
+document.getElementById("refreshButton").addEventListener("click", loadSessions);
+document.getElementById("candidateSearch").addEventListener("input", renderSessions);
+document.getElementById("globalSearch").addEventListener("input", renderSessions);
+document.getElementById("statusFilter").addEventListener("change", renderSessions);
+
+loadSessions();
+</script>
+</body>
+</html>
